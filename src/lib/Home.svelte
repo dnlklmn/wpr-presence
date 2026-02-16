@@ -41,6 +41,12 @@
 
     $: selectedFiliale = filialenList.find((f) => f.f_id === fId);
 
+    function entryKey(marketId: number, date: string): string {
+        return `${marketId}:${date}`;
+    }
+
+    $: currentKey = entryKey(fId, datum);
+
     function generateScribble(): string {
         const w = 100;
         const h = 50;
@@ -63,16 +69,29 @@
         return `data:image/svg+xml,${encodeURIComponent(svg)}`;
     }
 
-    $: isSubmitted = datum in submittedDates;
-    $: submittedTime = submittedDates[datum] || "";
+    $: isSubmitted = currentKey in submittedDates;
+    $: submittedTime = submittedDates[currentKey] || "";
+
+    function saveCurrent() {
+        entriesByDate = { ...entriesByDate, [currentKey]: $personEntries };
+    }
+
+    function loadKey(key: string) {
+        personEntries.set(entriesByDate[key] || []);
+    }
 
     function selectDate(newDate: string) {
         if (newDate === datum) return;
-        // Save current day's entries
-        entriesByDate = { ...entriesByDate, [datum]: $personEntries };
-        // Switch date and load new day's entries
+        saveCurrent();
         datum = newDate;
-        personEntries.set(entriesByDate[datum] || []);
+        loadKey(entryKey(fId, newDate));
+    }
+
+    function selectMarket(newFId: number) {
+        if (newFId === fId) return;
+        saveCurrent();
+        fId = newFId;
+        loadKey(entryKey(newFId, datum));
     }
 
     // Generate week days
@@ -90,16 +109,15 @@
             const d = new Date(monday);
             d.setDate(monday.getDate() + i);
             const dateStr = d.toISOString().split("T")[0];
+            const k = entryKey(fId, dateStr);
             const entries =
-                dateStr === datum
-                    ? $personEntries
-                    : entriesByDate[dateStr] || [];
+                k === currentKey ? $personEntries : entriesByDate[k] || [];
             days.push({
                 name: dayNames[d.getDay()],
                 label: `${monthNames[d.getMonth()]} ${d.getDate()}`,
                 date: dateStr,
-                hasReport: dateStr in submittedDates,
-                hasPending: !(dateStr in submittedDates) && entries.length > 0,
+                hasReport: k in submittedDates,
+                hasPending: !(k in submittedDates) && entries.length > 0,
             });
         }
         return days;
@@ -141,7 +159,7 @@
 
             // Load historical records into entriesByDate and submittedDates
             if (historyRes.success && historyRes.records.length > 0) {
-                const byDate: Record<string, PersonEntry[]> = {};
+                const byKey: Record<string, PersonEntry[]> = {};
                 const submitted: Record<string, string> = {};
 
                 for (const record of historyRes.records) {
@@ -150,19 +168,17 @@
                     );
                     if (!employee) continue;
 
-                    if (!byDate[record.datum]) {
-                        byDate[record.datum] = [];
-                        // Mark as submitted (use a placeholder time since we don't store submission time)
-                        submitted[record.datum] = "✓";
+                    const k = entryKey(record.f_id, record.datum);
+                    if (!byKey[k]) {
+                        byKey[k] = [];
+                        submitted[k] = "✓";
                     }
 
                     // Avoid duplicates
                     if (
-                        !byDate[record.datum].some(
-                            (e) => e.person.ma_id === record.ma_id,
-                        )
+                        !byKey[k].some((e) => e.person.ma_id === record.ma_id)
                     ) {
-                        byDate[record.datum].push({
+                        byKey[k].push({
                             person: employee,
                             fromTime: record.schicht_start,
                             toTime: record.schicht_ende,
@@ -171,12 +187,13 @@
                     }
                 }
 
-                entriesByDate = byDate;
+                entriesByDate = byKey;
                 submittedDates = submitted;
 
-                // If today has history, load it
-                if (byDate[datum]) {
-                    personEntries.set(byDate[datum]);
+                // If current market+day has history, load it
+                const ck = entryKey(fId, datum);
+                if (byKey[ck]) {
+                    personEntries.set(byKey[ck]);
                 }
             }
         } catch (e) {
@@ -289,7 +306,7 @@
             const now = new Date();
             const hh = now.getHours().toString().padStart(2, "0");
             const mm = now.getMinutes().toString().padStart(2, "0");
-            submittedDates = { ...submittedDates, [datum]: `${hh}:${mm}` };
+            submittedDates = { ...submittedDates, [currentKey]: `${hh}:${mm}` };
         } catch (e) {
             error.set($t("submitError"));
         } finally {
@@ -298,7 +315,7 @@
     }
 
     function handleEdit() {
-        const { [datum]: _, ...rest } = submittedDates;
+        const { [currentKey]: _, ...rest } = submittedDates;
         submittedDates = rest;
     }
 
@@ -596,7 +613,7 @@
                             class="person-option"
                             class:selected-location={filiale.f_id === fId}
                             on:click={() => {
-                                fId = filiale.f_id;
+                                selectMarket(filiale.f_id);
                                 showLocationPicker = false;
                             }}
                         >
