@@ -3,6 +3,7 @@
 
     export let label: string = "From";
     export let value: string = "08:00";
+    export let minTime: string = "";
 
     const dispatch = createEventDispatcher<{
         submit: string;
@@ -69,8 +70,12 @@
         recenterIfNeeded(minEl, minBase.length);
     }
 
+    $: selectedTime = `${padTwo(hours)}:${padTwo(minutes)}`;
+    $: isValid = !minTime || selectedTime > minTime;
+
     function submit() {
-        dispatch("submit", `${padTwo(hours)}:${padTwo(minutes)}`);
+        if (!isValid) return;
+        dispatch("submit", selectedTime);
     }
 
     function cancel() {
@@ -124,7 +129,9 @@
             </div>
         </div>
 
-        <button class="submit-btn" on:click={submit}>Submit</button>
+        <button class="submit-btn" on:click={submit} disabled={!isValid}
+            >Submit</button
+        >
     </div>
 </div>
 
@@ -240,5 +247,10 @@
         font-size: 16px;
         font-weight: 600;
         cursor: pointer;
+    }
+
+    .submit-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
     }
 </style>

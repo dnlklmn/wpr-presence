@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
-import {
+    import {
         getMitarbeiter,
         getHoursHistory,
         submitHours,
@@ -24,6 +24,7 @@ import {
     let searchQuery = "";
     let showPeoplePicker = false;
     let signingEntry: PersonEntry | null = null;
+    let removingEntry: PersonEntry | null = null;
 
     let datum = new Date().toISOString().split("T")[0];
     let fId = 1;
@@ -106,28 +107,36 @@ import {
                 getMitarbeiter(),
                 getHoursHistory(),
             ]);
-            
+
             if (mitarbeiterRes.success) {
-                mitarbeiterList = mitarbeiterRes.mitarbeiter.filter((m) => m.active);
+                mitarbeiterList = mitarbeiterRes.mitarbeiter.filter(
+                    (m) => m.active,
+                );
             }
-            
+
             // Load historical records into entriesByDate and submittedDates
             if (historyRes.success && historyRes.records.length > 0) {
                 const byDate: Record<string, PersonEntry[]> = {};
                 const submitted: Record<string, string> = {};
-                
+
                 for (const record of historyRes.records) {
-                    const employee = mitarbeiterList.find(m => m.ma_id === record.ma_id);
+                    const employee = mitarbeiterList.find(
+                        (m) => m.ma_id === record.ma_id,
+                    );
                     if (!employee) continue;
-                    
+
                     if (!byDate[record.datum]) {
                         byDate[record.datum] = [];
                         // Mark as submitted (use a placeholder time since we don't store submission time)
-                        submitted[record.datum] = '✓';
+                        submitted[record.datum] = "✓";
                     }
-                    
+
                     // Avoid duplicates
-                    if (!byDate[record.datum].some(e => e.person.ma_id === record.ma_id)) {
+                    if (
+                        !byDate[record.datum].some(
+                            (e) => e.person.ma_id === record.ma_id,
+                        )
+                    ) {
                         byDate[record.datum].push({
                             person: employee,
                             fromTime: record.schicht_start,
@@ -136,10 +145,10 @@ import {
                         });
                     }
                 }
-                
+
                 entriesByDate = byDate;
                 submittedDates = submitted;
-                
+
                 // If today has history, load it
                 if (byDate[datum]) {
                     personEntries.set(byDate[datum]);
@@ -288,9 +297,40 @@ import {
         value={editingTime.field === "from"
             ? editingTime.entry.fromTime || "08:00"
             : editingTime.entry.toTime || "16:00"}
+        minTime={editingTime.field === "to" ? editingTime.entry.fromTime : ""}
         on:submit={handleTimeSubmit}
         on:cancel={handleTimeCancel}
     />
+{/if}
+
+{#if removingEntry}
+    <div
+        class="remove-overlay"
+        class:visible={removingEntry}
+        on:click={() => (removingEntry = null)}
+    >
+        <div
+            class="remove-sheet"
+            class:visible={removingEntry}
+            on:click|stopPropagation
+        >
+            <span class="remove-label"
+                >{removingEntry.person.vorname}
+                {removingEntry.person.name}</span
+            >
+            <button
+                class="remove-cancel-btn"
+                on:click={() => (removingEntry = null)}>Cancel</button
+            >
+            <button
+                class="remove-btn"
+                on:click={() => {
+                    removePerson(removingEntry.person.ma_id);
+                    removingEntry = null;
+                }}>Remove</button
+            >
+        </div>
+    </div>
 {/if}
 
 {#if $toast}
@@ -373,8 +413,12 @@ import {
             <ul class="entry-list">
                 {#each $personEntries as entry (entry.person.ma_id)}
                     <li class="entry-row">
-                        <span class="col-name"
-                            >{entry.person.vorname} {entry.person.name}</span
+                        <button
+                            class="col-name name-btn"
+                            on:click={() =>
+                                !isSubmitted && (removingEntry = entry)}
+                            disabled={isSubmitted}
+                            >{entry.person.vorname} {entry.person.name}</button
                         >
                         <button
                             class="col-from time-btn"
@@ -714,7 +758,7 @@ import {
         gap: 12px;
     }
 
-    .entry-row .col-name {
+    .name-btn {
         flex: 1;
         font-size: 14px;
         font-weight: 500;
@@ -722,6 +766,16 @@ import {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        background: none;
+        border: none;
+        font-family: inherit;
+        text-align: left;
+        padding: 0;
+        cursor: pointer;
+    }
+
+    .name-btn:disabled {
+        cursor: default;
     }
 
     .time-btn {
@@ -934,5 +988,76 @@ import {
 
     .person-option:hover {
         background: var(--color-bg-secondary);
+    }
+
+    /* Remove Sheet */
+    .remove-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0);
+        display: flex;
+        align-items: flex-end;
+        z-index: 100;
+        transition: background 0.3s ease;
+    }
+
+    .remove-overlay.visible {
+        background: rgba(0, 0, 0, 0.7);
+    }
+
+    .remove-sheet {
+        width: 100%;
+        background: #363636;
+        border-radius: 4px 4px 0 0;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+    }
+
+    .remove-sheet.visible {
+        transform: translateY(0);
+    }
+
+    .remove-label {
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: 600;
+        font-family: inherit;
+        padding: 0 6px;
+    }
+
+    .remove-cancel-btn {
+        width: 100%;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--color-bg-secondary);
+        border: none;
+        border-radius: 4px;
+        color: var(--color-text);
+        font-family: inherit;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .remove-btn {
+        width: 100%;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--color-error);
+        border: none;
+        border-radius: 4px;
+        color: #ffffff;
+        font-family: inherit;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
     }
 </style>
