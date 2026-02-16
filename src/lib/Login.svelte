@@ -1,6 +1,7 @@
 <script lang="ts">
     import { login } from "./api";
     import { currentScreen, error } from "./stores";
+    import { t } from "./i18n";
 
     let username = "";
     let password = "";
@@ -8,7 +9,7 @@
 
     async function handleLogin() {
         if (!username || !password) {
-            error.set("Please enter username and password");
+            error.set($t("loginErrorEmpty"));
             return;
         }
 
@@ -20,10 +21,10 @@
             if (res.success) {
                 currentScreen.set("home");
             } else {
-                error.set("Invalid username or password");
+                error.set($t("loginErrorInvalid"));
             }
         } catch (e) {
-            error.set("Connection error");
+            error.set($t("connectionError"));
         } finally {
             loading = false;
         }
@@ -48,12 +49,12 @@
     </div>
 
     <form on:submit|preventDefault={handleLogin}>
-        <h1>Login</h1>
+        <h1>{$t("login")}</h1>
 
         <input
             type="text"
             bind:value={username}
-            placeholder="Username"
+            placeholder={$t("username")}
             disabled={loading}
             autocomplete="off"
             autocorrect="off"
@@ -64,7 +65,7 @@
         <input
             type="password"
             bind:value={password}
-            placeholder="Password"
+            placeholder={$t("password")}
             disabled={loading}
         />
 
@@ -72,14 +73,14 @@
             <p class="error">{$error}</p>
         {/if}
 
-        <button class="link" type="button">Forgot password?</button>
+        <button class="link" type="button">{$t("forgotPassword")}</button>
 
         <button
             type="submit"
             class="submit"
             disabled={!username || !password || loading}
         >
-            {loading ? "Logging in..." : "Login"}
+            {loading ? $t("loggingIn") : $t("login")}
         </button>
     </form>
 

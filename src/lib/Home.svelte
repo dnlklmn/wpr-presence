@@ -2,10 +2,12 @@
     import { onMount } from "svelte";
     import {
         getMitarbeiter,
+        getFilialen,
         getHoursHistory,
         submitHours,
         logout,
         type Mitarbeiter,
+        type Filiale,
         type HoursRecord,
     } from "./api";
     import {
@@ -13,25 +15,31 @@
         personEntries,
         error,
         toast,
+        settings,
         type PersonEntry,
     } from "./stores";
     import SignatureModal from "./SignatureModal.svelte";
     import TimePickerSheet from "./TimePickerSheet.svelte";
+    import { t, dayNameKeys, monthNameKeys } from "./i18n";
 
     let mitarbeiterList: Mitarbeiter[] = [];
+    let filialenList: Filiale[] = [];
     let loading = true;
     let submitting = false;
     let searchQuery = "";
     let showPeoplePicker = false;
+    let showLocationPicker = false;
     let signingEntry: PersonEntry | null = null;
     let removingEntry: PersonEntry | null = null;
 
     let datum = new Date().toISOString().split("T")[0];
-    let fId = 1;
+    let fId = $settings.defaultMarketId || 1;
     let editingTime: { entry: PersonEntry; field: "from" | "to" } | null = null;
     let submittedDates: Record<string, string> = {};
     let weekPickerEl: HTMLElement;
     let entriesByDate: Record<string, PersonEntry[]> = {};
+
+    $: selectedFiliale = filialenList.find((f) => f.f_id === fId);
 
     function generateScribble(): string {
         const w = 100;
@@ -71,21 +79,8 @@
     $: weekDays = (() => {
         const days = [];
         const today = new Date();
-        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const monthNames = [
-            "Jan",
-            "Feb",
-            "Mar",
-            "Apr",
-            "May",
-            "Jun",
-            "Jul",
-            "Aug",
-            "Sep",
-            "Oct",
-            "Nov",
-            "Dec",
-        ];
+        const dayNames = dayNameKeys.map((k) => $t(k));
+        const monthNames = monthNameKeys.map((k) => $t(k));
 
         // Start from Monday of the previous week
         const monday = new Date(today);
@@ -125,15 +120,23 @@
 
     onMount(async () => {
         try {
-            const [mitarbeiterRes, historyRes] = await Promise.all([
-                getMitarbeiter(),
-                getHoursHistory(),
-            ]);
+            const [mitarbeiterRes, filialenRes, historyRes] = await Promise.all(
+                [getMitarbeiter(), getFilialen(), getHoursHistory()],
+            );
 
             if (mitarbeiterRes.success) {
                 mitarbeiterList = mitarbeiterRes.mitarbeiter.filter(
                     (m) => m.active,
                 );
+            }
+
+            if (filialenRes.success) {
+                filialenList = filialenRes.filialen;
+                if ($settings.defaultMarketId) {
+                    fId = $settings.defaultMarketId;
+                } else if (filialenList.length > 0) {
+                    fId = filialenList[0].f_id;
+                }
             }
 
             // Load historical records into entriesByDate and submittedDates
@@ -177,7 +180,7 @@
                 }
             }
         } catch (e) {
-            error.set("Failed to load data");
+            error.set($t("loadError"));
         } finally {
             loading = false;
         }
@@ -288,7 +291,7 @@
             const mm = now.getMinutes().toString().padStart(2, "0");
             submittedDates = { ...submittedDates, [datum]: `${hh}:${mm}` };
         } catch (e) {
-            error.set("Failed to submit hours");
+            error.set($t("submitError"));
         } finally {
             submitting = false;
         }
@@ -315,7 +318,7 @@
 
 {#if editingTime}
     <TimePickerSheet
-        label={editingTime.field === "from" ? "From" : "To"}
+        label={editingTime.field === "from" ? $t("from") : $t("to")}
         value={editingTime.field === "from"
             ? editingTime.entry.fromTime || "08:00"
             : editingTime.entry.toTime || "16:00"}
@@ -342,14 +345,14 @@
             >
             <button
                 class="remove-cancel-btn"
-                on:click={() => (removingEntry = null)}>Cancel</button
+                on:click={() => (removingEntry = null)}>{$t("cancel")}</button
             >
             <button
                 class="remove-btn"
                 on:click={() => {
                     removePerson(removingEntry.person.ma_id);
                     removingEntry = null;
-                }}>Remove</button
+                }}>{$t("remove")}</button
             >
         </div>
     </div>
@@ -377,8 +380,11 @@
                         fill="var(--color-accent)"
                     />
                 </svg>
-                <button class="location-btn">
-                    <span>Location</span>
+                <button
+                    class="location-btn"
+                    on:click={() => (showLocationPicker = true)}
+                >
+                    <span>{selectedFiliale?.name || $t("location")}</span>
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                         <path
                             d="M7.29377 12.7063C7.6844 13.0969 8.31877 13.0969 8.7094 12.7063L14.7094 6.70625C15.1 6.31563 15.1 5.68125 14.7094 5.29063C14.3188 4.9 13.6844 4.9 13.2938 5.29063L8.00002 10.5844L2.70627 5.29375C2.31565 4.90313 1.68127 4.90313 1.29065 5.29375C0.900024 5.68438 0.900024 6.31875 1.29065 6.70938L7.29065 12.7094L7.29377 12.7063Z"
@@ -419,16 +425,17 @@
         </section>
 
         <section class="table-header">
-            <span class="col-name">Name</span>
-            <span class="col-from">Start</span>
-            <span class="col-to">End</span>
-            <span class="col-sign">Sign...</span>
+            <span class="col-name">{$t("name")}</span>
+            <span class="col-from">{$t("start")}</span>
+            <span class="col-to">{$t("end")}</span>
+            <span class="col-sign">{$t("signCol")}</span>
         </section>
     </div>
     <main>
         {#if isSubmitted}
             <div class="success-block">
-                ✓ Report successfully submitted at {submittedTime}
+                ✓ {$t("reportSubmittedAt")}
+                {submittedTime}
             </div>
         {/if}
 
@@ -474,22 +481,24 @@
                                 <button
                                     class="sign-box ready"
                                     on:click={() => openSignature(entry)}
-                                    disabled={isSubmitted}>Sign</button
+                                    disabled={isSubmitted}>{$t("sign")}</button
                                 >
                             {/if}
                         {:else}
                             <button
                                 class="end-btn"
                                 on:click={() => editTime(entry, "to")}
-                                disabled={isSubmitted}>End</button
+                                disabled={isSubmitted}>{$t("end")}</button
                             >
-                            <button class="sign-box" disabled>Sign</button>
+                            <button class="sign-box" disabled
+                                >{$t("sign")}</button
+                            >
                         {/if}
                     </li>
                 {/each}
             </ul>
         {:else}
-            <p class="empty">No people added yet</p>
+            <p class="empty">{$t("noPeopleYet")}</p>
         {/if}
 
         {#if $error}
@@ -498,7 +507,9 @@
 
         <div class="bottom-actions">
             {#if isSubmitted}
-                <button class="action-btn" on:click={handleEdit}> Edit </button>
+                <button class="action-btn" on:click={handleEdit}
+                    >{$t("edit")}</button
+                >
             {:else}
                 <button
                     class="action-btn"
@@ -510,7 +521,7 @@
                             fill="white"
                         />
                     </svg>
-                    Add new
+                    {$t("addNew")}
                 </button>
                 <button
                     class="action-btn submit"
@@ -518,7 +529,7 @@
                     on:click={handleSubmit}
                     disabled={submitting || !allEntriesComplete}
                 >
-                    {submitting ? "Submitting..." : "Submit"}
+                    {submitting ? $t("submitting") : $t("submit")}
                 </button>
             {/if}
         </div>
@@ -529,7 +540,7 @@
     <div class="picker-overlay" on:click={() => (showPeoplePicker = false)}>
         <div class="picker" on:click|stopPropagation>
             <div class="picker-header">
-                <h3>Add Person</h3>
+                <h3>{$t("addPerson")}</h3>
                 <button
                     class="close"
                     on:click={() => (showPeoplePicker = false)}>×</button
@@ -539,15 +550,15 @@
             <input
                 type="text"
                 class="search"
-                placeholder="Search..."
+                placeholder={$t("search")}
                 bind:value={searchQuery}
                 autocomplete="off"
             />
 
             {#if loading}
-                <p class="loading">Loading...</p>
+                <p class="loading">{$t("loading")}</p>
             {:else if filteredMitarbeiter.length === 0}
-                <p class="empty">No matches</p>
+                <p class="empty">{$t("noMatches")}</p>
             {:else}
                 <ul class="picker-list">
                     {#each filteredMitarbeiter as person}
@@ -563,6 +574,40 @@
                     {/each}
                 </ul>
             {/if}
+        </div>
+    </div>
+{/if}
+
+{#if showLocationPicker}
+    <div class="picker-overlay" on:click={() => (showLocationPicker = false)}>
+        <div class="picker" on:click|stopPropagation>
+            <div class="picker-header">
+                <h3>{$t("selectLocation")}</h3>
+                <button
+                    class="close"
+                    on:click={() => (showLocationPicker = false)}>×</button
+                >
+            </div>
+
+            <ul class="picker-list">
+                {#each filialenList as filiale}
+                    <li>
+                        <button
+                            class="person-option"
+                            class:selected-location={filiale.f_id === fId}
+                            on:click={() => {
+                                fId = filiale.f_id;
+                                showLocationPicker = false;
+                            }}
+                        >
+                            <span class="location-name">{filiale.name}</span>
+                            <span class="location-address"
+                                >{filiale.address}</span
+                            >
+                        </button>
+                    </li>
+                {/each}
+            </ul>
         </div>
     </div>
 {/if}
@@ -1018,6 +1063,29 @@
 
     .person-option:hover {
         background: var(--color-bg-secondary);
+    }
+
+    .person-option.selected-location {
+        background: var(--color-bg-secondary);
+        border-left: 2px solid var(--color-accent);
+    }
+
+    .person-option:has(.location-name) {
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        height: auto;
+        padding: 12px var(--spacing-md);
+        gap: 2px;
+    }
+
+    .location-name {
+        font-weight: 600;
+    }
+
+    .location-address {
+        font-size: 12px;
+        color: var(--color-text-muted);
     }
 
     /* Remove Sheet */

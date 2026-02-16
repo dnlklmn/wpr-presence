@@ -1,5 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher, onMount } from "svelte";
+    import { t } from "./i18n";
 
     export let label: string = "From";
     export let value: string = "08:00";
@@ -112,7 +113,7 @@
                     {/each}
                     <div class="wheel-spacer"></div>
                 </div>
-                <div class="wheel-label">Hr</div>
+                <div class="wheel-label">{$t("hr")}</div>
             </div>
 
             <div class="wheel-wrapper">
@@ -125,12 +126,12 @@
                     {/each}
                     <div class="wheel-spacer"></div>
                 </div>
-                <div class="wheel-label">Min</div>
+                <div class="wheel-label">{$t("min")}</div>
             </div>
         </div>
 
         <button class="submit-btn" on:click={submit} disabled={!isValid}
-            >Submit</button
+            >{$t("submit")}</button
         >
     </div>
 </div>
