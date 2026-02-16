@@ -33,6 +33,28 @@
     let weekPickerEl: HTMLElement;
     let entriesByDate: Record<string, PersonEntry[]> = {};
 
+    function generateScribble(): string {
+        const w = 100;
+        const h = 50;
+        const points: string[] = [];
+        let x = 5 + Math.random() * 10;
+        let y = 20 + Math.random() * 10;
+        points.push(`M${x.toFixed(1)} ${y.toFixed(1)}`);
+        const steps = 5 + Math.floor(Math.random() * 4);
+        for (let i = 0; i < steps; i++) {
+            x += 8 + Math.random() * 12;
+            y = 10 + Math.random() * 30;
+            const cx = x - 5 + Math.random() * 10;
+            const cy = 10 + Math.random() * 30;
+            points.push(
+                `Q${cx.toFixed(1)} ${cy.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)}`,
+            );
+        }
+        const d = points.join(" ");
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${w} ${h}'><path d='${d}' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/></svg>`;
+        return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    }
+
     $: isSubmitted = datum in submittedDates;
     $: submittedTime = submittedDates[datum] || "";
 
@@ -141,7 +163,7 @@
                             person: employee,
                             fromTime: record.schicht_start,
                             toTime: record.schicht_ende,
-                            signature: record.signature || null,
+                            signature: record.signature || generateScribble(),
                         });
                     }
                 }
