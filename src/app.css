@@ -1,0 +1,72 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap");
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+:root {
+    /* Colors */
+    --color-bg: #242424;
+    --color-bg-secondary: #1b1b1b;
+    --color-accent: #b7d100;
+    --color-text: #ffffff;
+    --color-text-muted: rgba(255, 255, 255, 0.33);
+    --color-text-secondary: rgba(255, 255, 255, 0.6);
+    --color-error: #ff6b6b;
+    --color-success: #22c55e;
+
+    /* Typography */
+    font-family:
+        "Manrope",
+        -apple-system,
+        BlinkMacSystemFont,
+        sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+    color: var(--color-text);
+    background-color: var(--color-bg);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+
+    /* Border radius */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+}
+
+body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    min-height: 100dvh;
+}
+
+#app {
+    width: 100%;
+    max-width: 430px;
+    margin: 0 auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+}
+
+@media (min-width: 430px) {
+    body {
+        background-color: #1a1a1a;
+    }
+
+    #app {
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+    }
+}
