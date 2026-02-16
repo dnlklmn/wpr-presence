@@ -14,6 +14,7 @@
         type PersonEntry,
     } from "./stores";
     import SignatureModal from "./SignatureModal.svelte";
+    import TimePickerSheet from "./TimePickerSheet.svelte";
 
     let mitarbeiterList: Mitarbeiter[] = [];
     let loading = true;
@@ -25,6 +26,21 @@
     let datum = new Date().toISOString().split("T")[0];
     let fId = 1;
     let editingTime: { entry: PersonEntry; field: "from" | "to" } | null = null;
+    let submittedDates: Record<string, string> = {};
+    let weekPickerEl: HTMLElement;
+    let entriesByDate: Record<string, PersonEntry[]> = {};
+
+    $: isSubmitted = datum in submittedDates;
+    $: submittedTime = submittedDates[datum] || "";
+
+    function selectDate(newDate: string) {
+        if (newDate === datum) return;
+        // Save current day's entries
+        entriesByDate = { ...entriesByDate, [datum]: $personEntries };
+        // Switch date and load new day's entries
+        datum = newDate;
+        personEntries.set(entriesByDate[datum] || []);
+    }
 
     // Generate week days
     $: weekDays = (() => {
@@ -46,19 +62,24 @@
             "Dec",
         ];
 
-        // Start from Monday of current week
+        // Start from Monday of the previous week
         const monday = new Date(today);
-        monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+        monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) - 7);
 
-        for (let i = 0; i < 7; i++) {
+        for (let i = 0; i < 21; i++) {
             const d = new Date(monday);
             d.setDate(monday.getDate() + i);
+            const dateStr = d.toISOString().split("T")[0];
+            const entries =
+                dateStr === datum
+                    ? $personEntries
+                    : entriesByDate[dateStr] || [];
             days.push({
                 name: dayNames[d.getDay()],
                 label: `${monthNames[d.getMonth()]} ${d.getDate()}`,
-                date: d.toISOString().split("T")[0],
-                hasReport: false, // TODO: check if date has submitted report
-                hasPending: false, // TODO: check if date has pending entries
+                date: dateStr,
+                hasReport: dateStr in submittedDates,
+                hasPending: !(dateStr in submittedDates) && entries.length > 0,
             });
         }
         return days;
@@ -88,13 +109,26 @@
         } finally {
             loading = false;
         }
+
+        // Scroll selected day into view
+        requestAnimationFrame(() => {
+            const selected = weekPickerEl?.querySelector(".day.selected");
+            if (selected) {
+                selected.scrollIntoView({ inline: "center", block: "nearest" });
+            }
+        });
     });
 
     function addPerson(person: Mitarbeiter) {
+        const now = new Date();
+        const m = now.getMinutes();
+        const roundedMin = Math.floor(m / 15) * 15;
+        const hh = now.getHours().toString().padStart(2, "0");
+        const mm = roundedMin.toString().padStart(2, "0");
         const entry: PersonEntry = {
             person,
-            fromTime: "08:00",
-            toTime: "16:00",
+            fromTime: `${hh}:${mm}`,
+            toTime: "",
             signature: null,
         };
         personEntries.update((list) => [...list, entry]);
@@ -125,19 +159,22 @@
     }
 
     function editTime(entry: PersonEntry, field: "from" | "to") {
-        // For now, use a simple prompt. Could be replaced with a custom time picker modal
-        const currentValue = field === "from" ? entry.fromTime : entry.toTime;
-        const newValue = prompt(
-            `Enter ${field} time (HH:MM):`,
-            currentValue || "08:00",
-        );
-        if (newValue && /^\d{2}:\d{2}$/.test(newValue)) {
+        editingTime = { entry, field };
+    }
+
+    function handleTimeSubmit(e: CustomEvent<string>) {
+        if (editingTime) {
             updateEntry(
-                entry.person.ma_id,
-                field === "from" ? "fromTime" : "toTime",
-                newValue,
+                editingTime.entry.person.ma_id,
+                editingTime.field === "from" ? "fromTime" : "toTime",
+                e.detail,
             );
+            editingTime = null;
         }
+    }
+
+    function handleTimeCancel() {
+        editingTime = null;
     }
 
     function handleSignatureSubmit(e: CustomEvent<string>) {
@@ -174,14 +211,20 @@
                     signature: entry.signature,
                 });
             }
-            personEntries.set([]);
-            toast.set("Report submitted");
-            setTimeout(() => toast.set(null), 3000);
+            const now = new Date();
+            const hh = now.getHours().toString().padStart(2, "0");
+            const mm = now.getMinutes().toString().padStart(2, "0");
+            submittedDates = { ...submittedDates, [datum]: `${hh}:${mm}` };
         } catch (e) {
             error.set("Failed to submit hours");
         } finally {
             submitting = false;
         }
+    }
+
+    function handleEdit() {
+        const { [datum]: _, ...rest } = submittedDates;
+        submittedDates = rest;
     }
 
     function handleLogout() {
@@ -195,6 +238,17 @@
         personName="{signingEntry.person.vorname} {signingEntry.person.name}"
         on:submit={handleSignatureSubmit}
         on:cancel={handleSignatureCancel}
+    />
+{/if}
+
+{#if editingTime}
+    <TimePickerSheet
+        label={editingTime.field === "from" ? "From" : "To"}
+        value={editingTime.field === "from"
+            ? editingTime.entry.fromTime || "08:00"
+            : editingTime.entry.toTime || "16:00"}
+        on:submit={handleTimeSubmit}
+        on:cancel={handleTimeCancel}
     />
 {/if}
 
@@ -243,13 +297,13 @@
         </button>
     </header>
 
-    <section class="week-picker">
+    <section class="week-picker" bind:this={weekPickerEl}>
         {#each weekDays as day}
             <button
                 class="day"
                 class:selected={day.date === datum}
                 class:has-report={day.hasReport}
-                on:click={() => (datum = day.date)}
+                on:click={() => selectDate(day.date)}
             >
                 <span class="day-name">{day.name}</span>
                 {#if day.hasPending}
@@ -262,12 +316,18 @@
 
     <section class="table-header">
         <span class="col-name">Name</span>
-        <span class="col-from">From</span>
-        <span class="col-to">To</span>
+        <span class="col-from">Start</span>
+        <span class="col-to">End</span>
         <span class="col-sign">Sign...</span>
     </section>
 
     <main>
+        {#if isSubmitted}
+            <div class="success-block">
+                ✓ Report successfully submitted at {submittedTime}
+            </div>
+        {/if}
+
         {#if $personEntries.length > 0}
             <ul class="entry-list">
                 {#each $personEntries as entry (entry.person.ma_id)}
@@ -278,40 +338,43 @@
                         <button
                             class="col-from time-btn"
                             on:click={() => editTime(entry, "from")}
+                            disabled={isSubmitted}
                         >
                             {entry.fromTime || "--:--"}
                         </button>
-                        <button
-                            class="col-to time-btn"
-                            on:click={() => editTime(entry, "to")}
-                        >
-                            {entry.toTime || "--:--"}
-                        </button>
-                        {#if entry.signature}
+                        {#if entry.toTime}
                             <button
-                                class="sign-box signed"
-                                on:click={() => openSignature(entry)}
+                                class="col-to time-btn"
+                                on:click={() => editTime(entry, "to")}
+                                disabled={isSubmitted}
                             >
-                                <svg
-                                    width="48"
-                                    height="48"
-                                    viewBox="0 0 48 48"
-                                    fill="none"
-                                >
-                                    <path
-                                        d="M10 11.04C10.5 23.04 11.5 45.54 14 33.54C16.5 21.54 16 11.04 18.5 21.04C21 31.04 22 40.04 26.5 25.54C31 11.04 30.5 18.04 32.5 27.54C34.1 35.14 36.8333 29.3733 38 25.54"
-                                        stroke="white"
-                                        stroke-width="2"
-                                    />
-                                </svg>
+                                {entry.toTime}
                             </button>
-                        {:else if entry.toTime && !entry.signature}
-                            <button
-                                class="sign-box ready"
-                                on:click={() => openSignature(entry)}
-                                >Sign</button
-                            >
+                            {#if entry.signature}
+                                <button
+                                    class="sign-box signed"
+                                    on:click={() => openSignature(entry)}
+                                    disabled={isSubmitted}
+                                >
+                                    <img
+                                        src={entry.signature}
+                                        alt="Signature"
+                                        class="signature-img"
+                                    />
+                                </button>
+                            {:else}
+                                <button
+                                    class="sign-box ready"
+                                    on:click={() => openSignature(entry)}
+                                    disabled={isSubmitted}>Sign</button
+                                >
+                            {/if}
                         {:else}
+                            <button
+                                class="end-btn"
+                                on:click={() => editTime(entry, "to")}
+                                disabled={isSubmitted}>End</button
+                            >
                             <button class="sign-box" disabled>Sign</button>
                         {/if}
                     </li>
@@ -326,26 +389,30 @@
         {/if}
 
         <div class="bottom-actions">
-            <button
-                class="action-btn"
-                on:click={() => (showPeoplePicker = true)}
-            >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path
-                        d="M9 2.5C9 1.94687 8.55313 1.5 8 1.5C7.44687 1.5 7 1.94687 7 2.5V7H2.5C1.94687 7 1.5 7.44687 1.5 8C1.5 8.55313 1.94687 9 2.5 9H7V13.5C7 14.0531 7.44687 14.5 8 14.5C8.55313 14.5 9 14.0531 9 13.5V9H13.5C14.0531 9 14.5 8.55313 14.5 8C14.5 7.44687 14.0531 7 13.5 7H9V2.5Z"
-                        fill="white"
-                    />
-                </svg>
-                Add new
-            </button>
-            <button
-                class="action-btn submit"
-                class:ready={allEntriesComplete}
-                on:click={handleSubmit}
-                disabled={submitting || !allEntriesComplete}
-            >
-                {submitting ? "Submitting..." : "Submit"}
-            </button>
+            {#if isSubmitted}
+                <button class="action-btn" on:click={handleEdit}> Edit </button>
+            {:else}
+                <button
+                    class="action-btn"
+                    on:click={() => (showPeoplePicker = true)}
+                >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path
+                            d="M9 2.5C9 1.94687 8.55313 1.5 8 1.5C7.44687 1.5 7 1.94687 7 2.5V7H2.5C1.94687 7 1.5 7.44687 1.5 8C1.5 8.55313 1.94687 9 2.5 9H7V13.5C7 14.0531 7.44687 14.5 8 14.5C8.55313 14.5 9 14.0531 9 13.5V9H13.5C14.0531 9 14.5 8.55313 14.5 8C14.5 7.44687 14.0531 7 13.5 7H9V2.5Z"
+                            fill="white"
+                        />
+                    </svg>
+                    Add new
+                </button>
+                <button
+                    class="action-btn submit"
+                    class:ready={allEntriesComplete}
+                    on:click={handleSubmit}
+                    disabled={submitting || !allEntriesComplete}
+                >
+                    {submitting ? "Submitting..." : "Submit"}
+                </button>
+            {/if}
         </div>
     </main>
 </div>
@@ -468,21 +535,37 @@
     /* Week Picker */
     .week-picker {
         display: flex;
-        gap: 0;
+        gap: 8px;
         padding: var(--spacing-lg);
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .week-picker::-webkit-scrollbar {
+        display: none;
     }
 
     .day {
         display: flex;
         flex-direction: column;
+        gap: 2px;
         align-items: center;
-        padding: var(--spacing-xs) var(--spacing-sm);
+        padding: var(--spacing-sm) var(--spacing-sm);
         background: transparent;
         border: none;
         cursor: pointer;
         position: relative;
+        flex-shrink: 0;
+    }
+
+    .day.selected {
+        position: sticky;
+        left: -20px;
+        right: -20px;
+        z-index: 1;
+        background: #363636;
+        border-radius: var(--radius-sm);
     }
 
     .day-name {
@@ -493,13 +576,10 @@
 
     .day-date {
         font-size: 12px;
-        font-weight: 700;
+        font-weight: 600;
         color: #afafaf;
-    }
-
-    .day.selected {
-        background: #363636;
-        border-radius: var(--radius-sm);
+        white-space: nowrap;
+        opacity: 0.7;
     }
 
     .day.selected .day-name,
@@ -512,13 +592,23 @@
         color: var(--color-accent);
     }
 
+    .day.selected.has-report {
+        background: var(--color-accent);
+    }
+
+    .day.selected.has-report .day-name,
+    .day.selected.has-report .day-date {
+        color: var(--color-bg);
+    }
+
     .pending-dot {
         width: 6px;
         height: 6px;
         background: var(--color-accent);
         border-radius: 50%;
         position: absolute;
-        top: 50%;
+        top: 10%;
+        right: 5%;
         transform: translateY(-50%);
     }
 
@@ -527,7 +617,7 @@
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 0 var(--spacing-lg) var(--spacing-md);
+        padding: 0 var(--spacing-lg) var(--spacing-sm);
     }
 
     .table-header span {
@@ -557,6 +647,15 @@
         display: flex;
         flex-direction: column;
         gap: var(--spacing-lg);
+    }
+
+    .success-block {
+        background: var(--color-bg);
+        color: var(--color-accent);
+        padding: 12px var(--spacing-md);
+        border-radius: var(--radius-sm);
+        font-size: 14px;
+        font-weight: 600;
     }
 
     .entry-list {
@@ -618,6 +717,23 @@
         cursor: not-allowed;
     }
 
+    .end-btn {
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--color-accent);
+        border: none;
+        border-radius: var(--radius-sm);
+        color: var(--color-bg-secondary);
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
     .sign-box.ready {
         background: var(--color-accent);
         color: var(--color-bg-secondary);
@@ -628,9 +744,10 @@
         padding: 0;
     }
 
-    .sign-box.signed svg {
+    .signature-img {
         width: 48px;
         height: 48px;
+        object-fit: contain;
     }
 
     /* Bottom Actions */

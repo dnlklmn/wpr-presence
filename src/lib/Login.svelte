@@ -90,6 +90,7 @@
     .login {
         display: flex;
         flex-direction: column;
+        align-items: center;
         justify-content: space-between;
         min-height: 100vh;
         min-height: 100dvh;
@@ -117,6 +118,13 @@
         display: flex;
         flex-direction: column;
         gap: var(--spacing-lg);
+        width: 100%;
+    }
+
+    @media (min-width: 640px) {
+        form {
+            width: 50%;
+        }
     }
 
     h1 {
