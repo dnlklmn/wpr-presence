@@ -1,10 +1,12 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import {
+import {
         getMitarbeiter,
+        getHoursHistory,
         submitHours,
         logout,
         type Mitarbeiter,
+        type HoursRecord,
     } from "./api";
     import {
         currentScreen,
@@ -100,12 +102,51 @@
 
     onMount(async () => {
         try {
-            const res = await getMitarbeiter();
-            if (res.success) {
-                mitarbeiterList = res.mitarbeiter.filter((m) => m.active);
+            const [mitarbeiterRes, historyRes] = await Promise.all([
+                getMitarbeiter(),
+                getHoursHistory(),
+            ]);
+            
+            if (mitarbeiterRes.success) {
+                mitarbeiterList = mitarbeiterRes.mitarbeiter.filter((m) => m.active);
+            }
+            
+            // Load historical records into entriesByDate and submittedDates
+            if (historyRes.success && historyRes.records.length > 0) {
+                const byDate: Record<string, PersonEntry[]> = {};
+                const submitted: Record<string, string> = {};
+                
+                for (const record of historyRes.records) {
+                    const employee = mitarbeiterList.find(m => m.ma_id === record.ma_id);
+                    if (!employee) continue;
+                    
+                    if (!byDate[record.datum]) {
+                        byDate[record.datum] = [];
+                        // Mark as submitted (use a placeholder time since we don't store submission time)
+                        submitted[record.datum] = '✓';
+                    }
+                    
+                    // Avoid duplicates
+                    if (!byDate[record.datum].some(e => e.person.ma_id === record.ma_id)) {
+                        byDate[record.datum].push({
+                            person: employee,
+                            fromTime: record.schicht_start,
+                            toTime: record.schicht_ende,
+                            signature: record.signature || null,
+                        });
+                    }
+                }
+                
+                entriesByDate = byDate;
+                submittedDates = submitted;
+                
+                // If today has history, load it
+                if (byDate[datum]) {
+                    personEntries.set(byDate[datum]);
+                }
             }
         } catch (e) {
-            error.set("Failed to load employees");
+            error.set("Failed to load data");
         } finally {
             loading = false;
         }
